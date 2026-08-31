@@ -86,16 +86,24 @@ async def api_list_annotations(book_id: int | None = Query(None)):
     return {"count": len(rows), "rows": rows}
 
 
-# ---------- GET /api/search ----------
+# ---------- GET /api/search（M5→M6 迁移） ----------
+# 此端点已由 M6 `backend/app/api/search_api.py` 的 `/api/search` 取代（hybrid 向量+FTS）。
+# 保留仅作向后兼容：把旧参数转调 search_api.search（import 延迟避免循环）。
+# 返回 schema 也同步升级为 M6 结构（results / engine / embedding_ready 等）。
 
 @router.get("/search")
 async def api_search(q: str = Query(..., min_length=1),
                      top_k: int = Query(10, ge=1, le=50)):
-    """M5 搜索占位：SQLite LIKE（关键词）。M6 升级 embedding + 向量检索 + FTS 兜底。"""
-    rows = await db.search_book_paras(q, top_k=top_k)
-    return {
-        "engine": "sqlite_like",  # M6 改为 hybrid: vector+fts
-        "query": q,
-        "hits": len(rows),
-        "rows": rows,
-    }
+    """M5→M6 向后兼容：直接转发给 search_api 的 hybrid 搜索。"""
+    from fastapi import Query as _Q  # noqa: F401
+    import sys as _sys
+    mod = _sys.modules.get("app.api.search_api")
+    if mod is None:
+        # fallback：走 M5 LIKE
+        rows = await db.search_book_paras(q, top_k=top_k)
+        return {
+            "q": q, "engine": "like_only_fallback",
+            "embedding_ready": False, "embedding_error": None,
+            "total": len(rows), "results": rows,
+        }
+    return await mod.search(q=q, top_k=top_k, engine="hybrid", include_context=True)

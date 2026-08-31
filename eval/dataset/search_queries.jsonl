@@ -1,0 +1,40 @@
+{"query": "欧莱雅 护发", "expected_book_ids": [1, 2, 3], "expected_keywords": ["欧莱雅", "护发"], "type": "exact_kw", "query_orig": "欧莱雅护发"}
+{"query": "洗护 品类 为什么 突 然 火热", "expected_book_ids": [1, 2, 3], "expected_keywords": ["洗护", "洗发水", "护发"], "type": "semantic_rewrite", "query_orig": "洗护品类为什么突然火热"}
+{"query": "美妆巨头 护发 布局", "expected_book_ids": [1, 2, 3], "expected_keywords": ["美妆", "护发", "巨头"], "type": "semantic_rewrite", "query_orig": "美妆巨头护发布局"}
+{"query": "卡诗 属 于 哪 家 公司", "expected_book_ids": [1, 2, 3], "expected_keywords": ["卡诗", "欧莱雅"], "type": "exact_kw", "query_orig": "卡诗属于哪家公司"}
+{"query": "洗发水 护发素 几十年 的 老行业 为什么 又热起来", "expected_book_ids": [1, 2, 3], "expected_keywords": ["洗发水", "护发素"], "type": "semantic_rewrite", "query_orig": "洗发水护发素几十年的老行业为什么又热起来"}
+{"query": "美妆 品牌 为什么 开 始 做 头发 相关 的 业务", "expected_book_ids": [1, 2, 3], "expected_keywords": ["美妆", "头发", "护发"], "type": "semantic_rewrite", "query_orig": "美妆品牌为什么开始做头发相关的业务"}
+{"query": "护发品牌 竞争 格 局", "expected_book_ids": [1, 2, 3], "expected_keywords": ["品牌", "竞争"], "type": "semantic", "query_orig": "护发品牌竞争格局"}
+{"query": "欧莱雅 近年 收购 的 护发品牌", "expected_book_ids": [1, 2, 3], "expected_keywords": ["欧莱雅", "收购", "护发"], "type": "semantic_rewrite", "query_orig": "欧莱雅近年收购的护发品牌"}
+{"query": "高端护发 产品线", "expected_book_ids": [1, 2, 3], "expected_keywords": ["卡诗", "高端", "护发"], "type": "semantic", "query_orig": "高端护发产品线"}
+{"query": "洗护赛道 新玩家 、 新收购", "expected_book_ids": [1, 2, 3], "expected_keywords": ["收购", "洗护"], "type": "semantic_rewrite", "query_orig": "洗护赛道新玩家、新收购"}
+{"query": "国内 洗护 消费升级", "expected_book_ids": [1, 2, 3], "expected_keywords": ["消费", "洗护", "国内"], "type": "semantic", "query_orig": "国内洗护消费升级"}
+{"query": "美妆公司 拓展品类 策略", "expected_book_ids": [1, 2, 3], "expected_keywords": ["品类", "美妆"], "type": "semantic", "query_orig": "美妆公司拓展品类策略"}
+{"query": "为什么 美妆公司 要 寻找 新的 增长 赛道", "expected_book_ids": [1, 2, 3], "expected_keywords": ["增长", "美妆"], "type": "semantic", "query_orig": "为什么美妆公司要寻找新的增长赛道"}
+{"query": "洗发水 行业 的 竞争", "expected_book_ids": [1, 2, 3], "expected_keywords": ["洗发水", "竞争", "市场"], "type": "exact_kw", "query_orig": "洗发水行业的竞争"}
+{"query": "洗护行业 渠道变化", "expected_book_ids": [1, 2, 3], "expected_keywords": ["渠道", "洗护"], "type": "semantic_rewrite", "query_orig": "洗护行业渠道变化"}
+{"query": "护发品牌 如何 做 差异化", "expected_book_ids": [1, 2, 3], "expected_keywords": ["品牌", "差异化"], "type": "semantic", "query_orig": "护发品牌如何做差异化"}
+{"query": "护发 赛道 的 社媒营销", "expected_book_ids": [1, 2, 3], "expected_keywords": ["营销", "媒体", "洗护"], "type": "semantic", "query_orig": "护发赛道的社媒营销"}
+{"query": "复购 驱动 的 护发产品 卖点", "expected_book_ids": [1, 2, 3], "expected_keywords": ["复购", "产品"], "type": "semantic", "query_orig": "复购驱动的护发产品卖点"}
+{"query": "洗发水 价格策略", "expected_book_ids": [1, 2, 3], "expected_keywords": ["价格", "洗发水"], "type": "exact_kw", "query_orig": "洗发水价格策略"}
+{"query": "美妆 洗护 的 平台流量 打法", "expected_book_ids": [1, 2, 3], "expected_keywords": ["平台", "流量", "美妆"], "type": "semantic", "query_orig": "美妆洗护的平台流量打法"}
+{"query": "全球 美妆企业 在 中国 护发 的 布局", "expected_book_ids": [1, 2, 3], "expected_keywords": ["全球", "护发", "欧莱雅"], "type": "semantic", "query_orig": "全球美妆企业在中国护发的布局"}
+{"query": "供应链 如何 影响 洗护 价格", "expected_book_ids": [1, 2, 3], "expected_keywords": ["供应链", "价格"], "type": "semantic", "query_orig": "供应链如何影响洗护价格"}
+{"query": "年轻消费者 的 护发 消费", "expected_book_ids": [1, 2, 3], "expected_keywords": ["年轻", "消费", "护发"], "type": "semantic", "query_orig": "年轻消费者的护发消费"}
+{"query": "护发 品类 增长 的 驱动因素", "expected_book_ids": [1, 2, 3], "expected_keywords": ["品类", "增长", "护发"], "type": "semantic", "query_orig": "护发品类增长的驱动因素"}
+{"query": "国货 在 洗护 市场 的 机会", "expected_book_ids": [1, 2, 3], "expected_keywords": ["国货", "洗护", "市场"], "type": "semantic", "query_orig": "国货在洗护市场的机会"}
+{"query": "美妆巨头 头发 赛道 战略", "expected_book_ids": [1, 2, 3], "expected_keywords": ["美妆", "巨头", "头发"], "type": "semantic_rewrite", "query_orig": "美妆巨头头发赛道战略"}
+{"query": "护发产品 如何 建立 护城河", "expected_book_ids": [1, 2, 3], "expected_keywords": ["品牌", "品类", "渠道", "差异化"], "type": "semantic_rewrite", "query_orig": "护发产品如何建立护城河"}
+{"query": "护发 为什么 是 一门 好生意", "expected_book_ids": [1, 2, 3], "expected_keywords": ["护发", "消费", "增长"], "type": "semantic", "query_orig": "护发为什么是一门好生意"}
+{"query": "欧莱雅 头发 板块", "expected_book_ids": [1, 2, 3], "expected_keywords": ["欧莱雅", "护发", "卡诗"], "type": "exact_kw", "query_orig": "欧莱雅头发板块"}
+{"query": "洗护行业 进入国内 市场 的 美国品牌", "expected_book_ids": [1, 2, 3], "expected_keywords": ["美国", "护发", "收购", "进入国内"], "type": "semantic_rewrite", "query_orig": "洗护行业进入国内市场的美国品牌"}
+{"query": "美妆 和 洗护行业 的 头等大事", "expected_book_ids": [1, 2, 3], "expected_keywords": ["美妆", "洗护", "头等大事"], "type": "semantic_rewrite", "query_orig": "美妆和洗护行业的头等大事"}
+{"query": "头发护理 市场", "expected_book_ids": [1, 2, 3], "expected_keywords": ["护发", "市场"], "type": "exact_kw", "query_orig": "头发护理市场"}
+{"query": "美妆公司 收购案例", "expected_book_ids": [1, 2, 3], "expected_keywords": ["收购", "美妆"], "type": "semantic", "query_orig": "美妆公司收购案例"}
+{"query": "洗发水 护发品牌 矩 阵", "expected_book_ids": [1, 2, 3], "expected_keywords": ["品牌", "卡诗", "护发"], "type": "semantic", "query_orig": "洗发水护发品牌矩阵"}
+{"query": "洗护行业 增长空间", "expected_book_ids": [1, 2, 3], "expected_keywords": ["洗护", "增长"], "type": "semantic", "query_orig": "洗护行业增长空间"}
+{"query": "美妆 和 个人护理 行业 热点", "expected_book_ids": [1, 2, 3], "expected_keywords": ["美妆", "洗护"], "type": "semantic", "query_orig": "美妆和个人护理行业热点"}
+{"query": "护发品牌 的 国内 营销", "expected_book_ids": [1, 2, 3], "expected_keywords": ["护发", "营销", "国内"], "type": "semantic", "query_orig": "护发品牌的国内营销"}
+{"query": "美妆巨头 的 护发 收购", "expected_book_ids": [1, 2, 3], "expected_keywords": ["收购", "护发", "巨头"], "type": "semantic_rewrite", "query_orig": "美妆巨头的护发收购"}
+{"query": "洗发水 与 护发素 行业 趋势", "expected_book_ids": [1, 2, 3], "expected_keywords": ["洗发水", "护发素", "行业"], "type": "semantic", "query_orig": "洗发水与护发素行业趋势"}
+{"query": "美妆 头部企业 竞争壁垒", "expected_book_ids": [1, 2, 3], "expected_keywords": ["品牌", "竞争", "品类", "渠道"], "type": "semantic", "query_orig": "美妆头部企业竞争壁垒"}

@@ -95,6 +95,18 @@ DDL = [
     """,
 ]
 
+# ---------- M6 FTS5 虚拟表：段落级中文关键词搜索兜底 ----------
+FTS_DDL = """
+CREATE VIRTUAL TABLE IF NOT EXISTS fts_para USING fts5(
+  para_id UNINDEXED,
+  book_id UNINDEXED,
+  book_title,
+  chapter_title,
+  text,
+  tokenize = 'unicode61 remove_diacritics 2'
+)
+"""
+
 # episodes 表业务字段（upsert 更新范围）
 _EPISODE_FIELDS = (
     "pid", "eid", "title", "description", "duration", "pub_date",
@@ -110,7 +122,8 @@ def db_path() -> Path:
 
 
 async def init_db() -> None:
-    """执行建表 DDL（幂等）；对旧库补齐 M2/M3 新增列与新表（迁移）。"""
+    """执行建表 DDL（幂等）；对旧库补齐 M2/M3 新增列与新表（迁移）；
+    M6 建 FTS5 虚拟表（失败回退：SQLite 编译未启用 FTS5 时不崩溃，继续使用 LIKE 兜底）。"""
     async with aiosqlite.connect(db_path()) as db:
         for ddl in DDL:
             await db.execute(ddl)
@@ -125,6 +138,12 @@ async def init_db() -> None:
                 await db.execute(f"ALTER TABLE {col[0]} ADD COLUMN {col[1]}")
             except aiosqlite.OperationalError:
                 pass
+        # M6 FTS5（enable 可选，不启用时 search 路径用 LIKE）
+        try:
+            await db.execute(FTS_DDL)
+        except aiosqlite.OperationalError:
+            # FTS5 不可用：静默，后续用 search_book_paras(LIKE) 关键词兜底
+            pass
         await db.commit()
 
 
@@ -537,26 +556,133 @@ def _escape_like(q: str) -> str:
 
 
 async def search_book_paras(q: str, top_k: int = 10) -> list[dict]:
-    """M5 搜索占位：SQLite LIKE（关键词），M6 再上语义。"""
+    """关键词兜底搜索：SQLite LIKE（AND 多 token，按空白切词）。
+
+    M5 起作为最低依赖的关键词保底；M6 中文语义查询失败时（embedding 不可用），这条路径
+    是最后防线。按空白切 token：对每个 token 独立 LIKE %token% ESCAPE，多个 token 做 AND。
+    对中文查询，建议至少把主要关键词用空格分开（如「欧莱雅 护发 市场」）。
+    """
     q = (q or "").strip()
     if not q:
         return []
     top_k = max(1, min(top_k, 50))
-    pattern = f"%{_escape_like(q)}%"
+    tokens = [t for t in q.split() if t]
+    if not tokens:
+        return []
+    # 过滤单字 ASCII 标点/空格 token（避免 AND 噪声导致过度严格）
+    # 规则：保留长度≥2 的 token（中英文单词 / 词组）；若全部是单字，兜底整个 q 做一次 LIKE
+    meaningful = [t for t in tokens if len(t) >= 2]
+    if not meaningful:
+        meaningful = [q]
+    patterns = [f"%{_escape_like(t)}%" for t in meaningful]
+    where_clause = " AND ".join(["bp.text LIKE ? ESCAPE '\\'"] * len(patterns))
     async with aiosqlite.connect(db_path()) as db:
         db.row_factory = aiosqlite.Row
         cur = await db.execute(
-            "SELECT bp.id AS para_id, bp.book_id, bp.chapter_id, "
+            f"SELECT bp.id AS para_id, bp.book_id, bp.chapter_id, "
             "  bp.seq AS para_seq, bp.text AS para_text, bp.start_ts, bp.end_ts, "
             "  bc.title AS chapter_title, bc.seq AS chapter_seq, "
             "  b.title AS book_title, b.cover_url "
             "FROM book_paras bp "
             "JOIN books b ON b.id = bp.book_id "
             "JOIN book_chapters bc ON bc.id = bp.chapter_id "
-            "WHERE bp.text LIKE ? ESCAPE '\\' "
+            f"WHERE {where_clause} "
             "ORDER BY b.created_at DESC, bp.id LIMIT ?",
-            (pattern, top_k),
+            (*patterns, top_k),
         )
         rows = [dict(r) for r in await cur.fetchall()]
     return rows
+
+
+# ---------- FTS 幂等重建 + 搜索（M6 FTS 关键词兜底） ----------
+
+async def fts_available() -> bool:
+    """当前 SQLite 是否启用 FTS5。"""
+    async with aiosqlite.connect(db_path()) as db:
+        try:
+            await db.execute("SELECT 1 FROM fts_para LIMIT 0")
+            return True
+        except aiosqlite.OperationalError:
+            return False
+
+
+async def rebuild_fts_index() -> None:
+    """把所有 book_paras + 书名/章 全量刷到 fts_para（幂等：每次 delete 再 insert）。"""
+    # 先保证表存在（用户库可能 M6 之前建的，FTS 还没 init）
+    async with aiosqlite.connect(db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        try:
+            await db.execute(FTS_DDL)
+        except aiosqlite.OperationalError:
+            # FTS5 不可用 → 直接回退，不抛异常
+            return
+        await db.execute("DELETE FROM fts_para")
+        cur = await db.execute(
+            "SELECT bp.id, bp.book_id, bp.text, "
+            "  bc.title AS chapter_title, b.title AS book_title "
+            "FROM book_paras bp "
+            "JOIN books b ON b.id = bp.book_id "
+            "JOIN book_chapters bc ON bc.id = bp.chapter_id"
+        )
+        rows = [dict(r) for r in await cur.fetchall()]
+        ins = [(r["id"], r["book_id"], r.get("book_title") or "",
+                r.get("chapter_title") or "", r.get("text") or "") for r in rows]
+        if ins:
+            await db.executemany(
+                "INSERT INTO fts_para(para_id, book_id, book_title, chapter_title, text) "
+                "VALUES (?, ?, ?, ?, ?)", ins,
+            )
+        await db.commit()
+
+
+async def search_fts_paras(q: str, top_k: int = 10) -> list[dict] | None:
+    """FTS5 关键词搜索；若 sqlite 未启用 FTS5 或查询含中文（unicode61 对连续 CJK 视为一整
+    个 token，部分匹配失效），返回 None（上层改走 LIKE 兜底）。
+
+    返回 schema 与 search_book_paras 一致：para_id/book_id/chapter_id/para_seq/
+    para_text/start_ts/end_ts/chapter_title/chapter_seq/book_title/cover_url。
+    """
+    q = (q or "").strip()
+    if not q:
+        return []
+    # 只要包含非 ASCII（几乎 100% 中文查询）→ unicode61 不支持子串命中，直接回退 LIKE
+    # 纯 ASCII 查询（如 brand / SKU / 英文缩写）走 FTS（速度 + 精确短语匹配）
+    if any(ord(c) >= 0x80 for c in q):
+        return None
+    top_k = max(1, min(top_k, 50))
+    tokens = [t for t in q.split() if t]
+    if not tokens:
+        return []
+
+    def _as_fts_expr(tok: str) -> str:
+        # ASCII 整词 → 双引号字面短语；否则逐字空格短语
+        if all(ord(c) < 0x80 for c in tok):
+            return f'"{tok}"'
+        chars = [ch for ch in tok if not ch.isspace()]
+        if not chars:
+            return '""'
+        return '"' + " ".join(chars) + '"'
+
+    fts_query = " AND ".join(_as_fts_expr(t) for t in tokens)
+    async with aiosqlite.connect(db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        try:
+            cur = await db.execute(
+                "SELECT f.para_id, f.book_id, "
+                "  b.title AS book_title, b.cover_url, "
+                "  bc.title AS chapter_title, bc.seq AS chapter_seq, "
+                "  bp.seq AS para_seq, bp.text AS para_text, bp.start_ts, bp.end_ts, bp.chapter_id "
+                "FROM fts_para f "
+                "JOIN book_paras bp ON bp.id = f.para_id "
+                "JOIN books b ON b.id = bp.book_id "
+                "JOIN book_chapters bc ON bc.id = bp.chapter_id "
+                "WHERE fts_para MATCH ? "
+                "ORDER BY rank "
+                "LIMIT ?",
+                (fts_query, top_k),
+            )
+        except aiosqlite.OperationalError:
+            return None
+        return [dict(r) for r in await cur.fetchall()]
+
 
