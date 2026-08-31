@@ -63,6 +63,27 @@ DDL = [
       PRIMARY KEY (episode_id, seq)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS books (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      episode_id INTEGER, title TEXT, cover_url TEXT,
+      created_at TEXT DEFAULT (datetime('now')), version INTEGER DEFAULT 1,
+      chapter_count INTEGER DEFAULT 0, para_count INTEGER DEFAULT 0
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS book_chapters (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      book_id INTEGER, seq INTEGER, title TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS book_paras (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      book_id INTEGER, chapter_id INTEGER, seq INTEGER,
+      text TEXT, start_ts REAL, end_ts REAL
+    )
+    """,
 ]
 
 # episodes 表业务字段（upsert 更新范围）
@@ -303,5 +324,105 @@ async def get_ad_flags(episode_id: int) -> list[dict]:
         cur = await db.execute(
             "SELECT seq, is_ad, ad_reason AS reason FROM episode_para_flags "
             "WHERE episode_id = ? ORDER BY seq", (episode_id,),
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+
+async def insert_book(episode_id: int, title: str, cover_url: str | None,
+                      chapter_count: int, para_count: int) -> int:
+    """创建 book 行（version 取该集已有书的最大 version + 1），返回 book id。"""
+    async with aiosqlite.connect(db_path()) as db:
+        cur = await db.execute(
+            "SELECT COALESCE(MAX(version), 0) + 1 FROM books WHERE episode_id = ?",
+            (episode_id,),
+        )
+        row = await cur.fetchone()
+        version = int(row[0]) if row else 1
+        cur = await db.execute(
+            "INSERT INTO books (episode_id, title, cover_url, version, chapter_count, para_count) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (episode_id, title, cover_url or "", version, chapter_count, para_count),
+        )
+        await db.commit()
+        return int(cur.lastrowid)
+
+
+async def insert_book_chapters(book_id: int, chapters: list[dict]) -> list[int]:
+    """批量插入章节，返回 chapter_id 列表（与 chapters 顺序一致）。"""
+    async with aiosqlite.connect(db_path()) as db:
+        ids: list[int] = []
+        for i, ch in enumerate(chapters, start=1):
+            cur = await db.execute(
+                "INSERT INTO book_chapters (book_id, seq, title) VALUES (?, ?, ?)",
+                (book_id, ch.get("seq", i), ch["title"]),
+            )
+            ids.append(int(cur.lastrowid))
+        await db.commit()
+        return ids
+
+
+async def insert_book_paras(book_id: int, chapter_ids: list[int],
+                            paras: list[dict]) -> None:
+    """批量插入段落。每个 para 含 {chapter_idx, seq, text, start_ts, end_ts}，
+    chapter_idx 对应 chapter_ids 的下标。"""
+    async with aiosqlite.connect(db_path()) as db:
+        rows = []
+        seq_g = 1
+        for p in paras:
+            cid = chapter_ids[int(p["chapter_idx"])]
+            rows.append((book_id, cid, seq_g, p["text"],
+                         float(p["start_ts"]), float(p["end_ts"])))
+            seq_g += 1
+        await db.executemany(
+            "INSERT INTO book_paras (book_id, chapter_id, seq, text, start_ts, end_ts) "
+            "VALUES (?, ?, ?, ?, ?, ?)", rows,
+        )
+        await db.commit()
+
+
+async def list_books() -> list[dict]:
+    """书架列表：按创建时间倒序。"""
+    async with aiosqlite.connect(db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT id, episode_id, title, cover_url, created_at, version, "
+            "  chapter_count, para_count "
+            "FROM books ORDER BY created_at DESC, id DESC"
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+
+async def get_book_header(book_id: int) -> dict | None:
+    """返回 books 行 + chapter_count。"""
+    async with aiosqlite.connect(db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT id, episode_id, title, cover_url, created_at, version, "
+            "  chapter_count, para_count FROM books WHERE id = ?", (book_id,),
+        )
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+
+async def get_book_chapters(book_id: int) -> list[dict]:
+    async with aiosqlite.connect(db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT id, seq, title FROM book_chapters WHERE book_id = ? ORDER BY seq", (book_id,),
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+
+async def get_book_paras(book_id: int) -> list[dict]:
+    """按 chapter_id.seq 顺序返回段落。"""
+    async with aiosqlite.connect(db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT bp.id, bp.chapter_id, bc.seq AS chapter_seq, "
+            "  bp.seq, bp.text, bp.start_ts, bp.end_ts "
+            "FROM book_paras bp "
+            "JOIN book_chapters bc ON bc.id = bp.chapter_id "
+            "WHERE bp.book_id = ? "
+            "ORDER BY bc.seq, bp.seq", (book_id,),
         )
         return [dict(r) for r in await cur.fetchall()]

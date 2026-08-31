@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.editor_api import router as editor_router
 from app.api.episodes import router as episodes_router
 from app.api.process import router as process_router
 from app.infra import db
@@ -26,6 +27,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="PodLore", version="0.1.0", description="把播客变成你的书", lifespan=lifespan)
 app.include_router(episodes_router)
 app.include_router(process_router)
+app.include_router(editor_router)
 
 
 @app.get("/health")
