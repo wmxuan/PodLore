@@ -57,7 +57,7 @@ echo "---- [3/4] 安装前端依赖 ----"
 (cd frontend && npm install)
 
 # ---- 4. FunASR 模型下载（modelscope 源，自带进度条）----
-echo "---- [4/4] 下载 FunASR 中文转写模型（paraformer-zh，约 1GB）----"
+echo "---- [4/4] 下载 3 个 FunASR 模型：SenseVoiceSmall(~230MB) + fsmn-vad + ct-punc ----"
 python backend/scripts/download_models.py
 
 # ---- 5. 环境配置 ----
