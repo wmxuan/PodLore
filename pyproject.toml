@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "podlore"
+version = "0.1.0"
+description = "PodLore —— 把播客变成你的书"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "pydantic>=2.7",
+  "pydantic-settings>=2.3",
+  "aiosqlite>=0.20",          # 异步 SQLite
+  "httpx>=0.27",              # 抓取页面/音频下载
+  "beautifulsoup4>=4.12",
+  "loguru>=0.7",
+  "openai>=1.40",             # DeepSeek 兼容客户端（OpenAI 协议）
+  "funasr>=1.2",              # FunASR 转写（中文）
+  "modelscope>=1.20",         # FunASR 模型下载
+  "sentence-transformers>=3.0",  # 本地 embedding（中文）
+  "numpy>=1.26,<2",  # Intel Mac 的 torch 2.2.2 与 numpy 2.x 运行时不兼容，锁 <2
+  "cryptography<49",  # cryptography 49 起不再发布 Intel Mac wheel（funasr→oss2 传递依赖）
+  "numba<0.63",       # numba 0.63+/llvmlite 0.49+ 无 Intel Mac wheel（funasr→librosa 传递依赖）
+  "llvmlite<0.46",
+  "torch>=2.2",       # funasr 元数据未声明但运行时必需；随平台解析（Intel Mac 上限 2.2.2）
+  "torchaudio>=2.2",  # 音频特征提取，与 torch 配对
+]
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.5"]
+
+# backend/app 布局映射：pip install -e . 后可直接 import app
+[tool.setuptools]
+package-dir = {"" = "backend"}
+packages = ["app", "app.infra", "app.services", "app.api", "app.schemas"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["backend/tests"]
+
+[tool.ruff]
+line-length = 100

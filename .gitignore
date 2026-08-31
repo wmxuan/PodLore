@@ -1,0 +1,24 @@
+# 环境与密钥
+.env
+
+# 运行时数据（SQLite/音频/向量）
+data/*
+!data/.gitkeep
+data/audio/
+data/vectors/
+
+# Python
+backend/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# 前端
+frontend/node_modules/
+frontend/dist/
+
+# 其他
+*.log
+.DS_Store

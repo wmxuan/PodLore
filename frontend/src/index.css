@@ -1,0 +1,67 @@
+/* ============================================================
+   PodLore 设计规范基础（PRD §4.4：ins 风 · 奶油色知识空间）
+   ============================================================ */
+:root {
+  /* ---- 色彩系统 ---- */
+  --color-bg: #f7f4ee;             /* 奶油白 · 全站主底 */
+  --color-bg-secondary: #f0ebe2;   /* 燕麦色 · 卡片/分组底 */
+  --color-accent: #7c8fa6;         /* 灰蓝 · 主强调（链接/按钮/进度/选中） */
+  --color-accent-light: #d8e0e8;   /* 雾蓝 · 标签/背景块/词云浅色 */
+  --color-text: #3a3a38;           /* 深灰棕 · 正文（不用纯黑） */
+  --color-text-secondary: #8a8a86; /* 灰 · 辅助文字 */
+  --color-border: #e5e0d8;         /* 极浅灰 · 1px hairline */
+  --color-warning: #c97b5d;        /* 陶土橘 · 仅广告标记/删除等警示 */
+  --color-dark: #2e343b;           /* 局部深色块（播放器/语义搜索） */
+
+  /* ---- 圆角（大圆角，全站统一） ---- */
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 20px;
+
+  /* ---- 间距 ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* ---- 阴影（柔和：低透明度、大模糊，不锐利） ---- */
+  --shadow-soft: 0 4px 24px rgba(58, 58, 56, 0.06);
+
+  /* ---- 线条（ins 灵魂：细、轻、少） ---- */
+  --hairline: 1px solid var(--color-border);
+}
+
+/* ---- 字体：细无衬线 + 呼吸感 ---- */
+html {
+  font-family:
+    'PingFang SC',
+    'Helvetica Neue',
+    'Source Han Sans SC',
+    'Noto Sans SC',
+    -apple-system,
+    sans-serif;
+  font-weight: 300;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 标题：letter-spacing 拉大，营造轻盈精致感 */
+h1,
+h2,
+h3 {
+  font-weight: 300;
+  letter-spacing: 0.05em;
+}
+
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
