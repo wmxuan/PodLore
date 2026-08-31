@@ -1,22 +1,15 @@
-/** M4 路由：/books（书架）/edit/:eid?（编辑页）/books/:id（阅读器占位）。 */
+/** M5 路由：/books（书架）/edit/:eid?（编辑页）/books/:id（阅读器）/annotations（标注列表）。 */
 import { BrowserRouter, Link, NavLink, Route, Routes } from 'react-router-dom'
 import Books from './pages/Books'
 import Edit from './pages/Edit'
+import Reader from './pages/Reader'
+import Annotations from './pages/Annotations'
 
 const NAV = [
   { to: '/books', label: '书架' },
+  { to: '/annotations', label: '标注' },
   { to: '/edit', label: '编辑器' },
 ]
-
-function ReaderPlaceholder() {
-  return (
-    <div className="page">
-      <h1 className="title-xl">阅读器 · M5 开发中</h1>
-      <p className="muted">这里将是播放器同步 + 划线/笔记 + 选中搜索的阅读空间。</p>
-      <Link className="btn-outline" to="/books">← 回到书架</Link>
-    </div>
-  )
-}
 
 function Nav() {
   return (
@@ -43,12 +36,13 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Books />} />
           <Route path="/books" element={<Books />} />
-          <Route path="/books/:id" element={<ReaderPlaceholder />} />
+          <Route path="/books/:id" element={<Reader />} />
           <Route path="/edit" element={<Edit />} />
           <Route path="/edit/:eid" element={<Edit />} />
+          <Route path="/annotations" element={<Annotations />} />
         </Routes>
       </main>
-      <footer className="site-foot">PodLore · 把播客变成你的书 · M4</footer>
+      <footer className="site-foot">PodLore · 把播客变成你的书 · M5</footer>
     </BrowserRouter>
   )
 }

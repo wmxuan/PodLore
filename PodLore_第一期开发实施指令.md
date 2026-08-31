@@ -67,8 +67,10 @@ dependencies = [
   "beautifulsoup4>=4.12",
   "loguru>=0.7",
   "openai>=1.40",             # DeepSeek 兼容客户端（OpenAI 协议）
-  "funasr>=1.2",              # FunASR 转写（中文）
+  "funasr>=1.2",              # FunASR 转写框架（模型用 SenseVoiceSmall，见 M2）
   "modelscope>=1.20",         # FunASR 模型下载
+  "torch>=2.2", "torchaudio>=2.2",  # FunASR 运行时必需（CPU 版）
+  "imageio-ffmpeg>=0.5",      # m4a 解码（静态二进制，仓库自足，不依赖系统 ffmpeg）
   "sentence-transformers>=3.0",  # 本地 embedding（中文）
   "numpy>=1.26",
 ]
@@ -100,8 +102,13 @@ line-length = 100
 DEEPSEEK_API_KEY=             # 摘要/金句/广告标记用
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 
-# ===== 转写引擎（本地）=====
-ASR_MODEL=paraformer-zh        # FunASR 中文模型
+# ===== 转写引擎（本地，轻量方案）=====
+# 主模型：SenseVoiceSmall（参数量 2.3 亿；fp32 磁盘约 940MB，int8 运行时内存约 240MB）
+# 速度：非自回归，快；自带标点（use_itn=True）——不需要额外标点模型
+# 时间戳：SenseVoice 不输出时间戳 → 用 fsmn-vad 分段提供起止时间（详见 M2）
+ASR_MODEL=SenseVoiceSmall      # 主转写模型（自带标点）
+ASR_VAD_MODEL=fsmn-vad         # VAD 语音活动检测（分段 + 起止时间，时间戳来源）
+ASR_USE_ITN=true               # 开启标点/逆文本归一化（自带标点，勿再叠加标点模型）
 ASR_DEVICE=cpu                 # cpu / cuda
 ASR_BATCH_SIZE=1
 
@@ -138,7 +145,7 @@ EMBEDDING_MODEL=bge-small-zh-v1.5   # 本地中文 embedding
 - `git init` 成功，目录结构齐全
 - 后端 `pytest` 跑通（含 test_smoke.py 包导入测试）
 - 前端 `npm run dev` 可访问
-- `install.sh` 可执行（venv + 依赖 + 前端 + FunASR 模型下载，模型下载有进度提示）
+- `install.sh` 可执行（venv + 依赖 + 前端 + **3 个模型下载**：SenseVoiceSmall + fsmn-vad + ct-punc，均有进度提示）
 
 ### M0 验收清单
 - [ ] 目录结构齐全
@@ -223,31 +230,57 @@ CRUD（全部 async，用 aiosqlite）：
 
 ---
 
-## M2：转写层（FunASR 中文转写）
+## M2：转写层（FunASR · SenseVoiceSmall + VAD 时间戳）
 
-**目标**：音频 → 中文转写文本 → 按时间戳分段 → 入库 `transcript_paras`。
+**目标**：音频 → 中文转写文本 → **带时间戳分段** → 入库 `transcript_paras`。
+**⚠️ 本里程碑关键技术点（已按 Trae 实测修正，勿再引入标点模型）**：
+1. **SenseVoiceSmall 自带标点**（`use_itn=True` 时）——**不需要 ct-punc**！实测叠加会出「。。」「，，」双重标点。方案只有 2 个模型：SenseVoiceSmall + fsmn-vad
+2. **时间戳来自 VAD**：SenseVoice 不输出时间戳 → 用 fsmn-vad 的段起止时间作为每段时间戳（模型无关、精确）
+3. **尺寸口径**：SenseVoiceSmall 参数量 2.3 亿，fp32 磁盘约 940MB，**int8 运行时内存约 240MB**——验收按「运行时内存」口径
+
+### 转写流水线（核心，先理解再写码）
+
+```
+原始音频（可能 4 小时）
+  ↓ ① m4a 解码：imageio-ffmpeg（静态二进制）转成 wav/pcm（funasr 输入格式）
+  ↓ ② VAD 分段：fsmn-vad 检测语音活动 → 切成若干语音段，每段带 [start, end] 起止时间
+  ↓ ③ 逐段转写：每段用 SenseVoiceSmall（use_itn=True）识别 → 得到带标点文本
+  ↓ ④ 组装：每段 = {text(带标点), start, end} → 时间戳来自 VAD 段的起止时间
+  ↓ ⑤ 段落化：segment_to_paras 合并成阅读友好的 50-200 字段落（保留首段时间戳）
+```
+
+**为什么这样设计**：VAD 段的时间戳是「模型无关」的（来自音频能量检测，精确可靠）——用它作为每段文本的起止时间，就绕开了 SenseVoiceSmall 不输出时间戳的限制。阅读器同步播放时，用段落的 start 匹配播放器 currentTime。
 
 ### 文件 1：`backend/app/infra/asr.py`（FunASR 封装）
 
-- 函数 `init_asr()`：加载 FunASR 模型（`paraformer-zh`，device 从配置读），**惰性加载**（首次调用才加载，避免启动慢）
-- 函数 `transcribe(audio_path: Path) -> list[dict]`：返回分段列表 `[{text, start, end}]`（时间戳秒）
-- 函数 `segment_to_paras(segments, max_chars=200) -> list[dict]`：把 ASR 分段合并/切分为「阅读友好的段落」（每段 50-200 字，按句号/时间间隔切）
+- 函数 `init_asr()`：加载 **2 个模型**（SenseVoiceSmall + fsmn-vad），device 从配置读，**惰性加载**（首次调用才加载，避免启动慢）
+- 函数 `transcribe(audio_path: Path) -> list[dict]`：按上述流水线执行，返回分段列表 `[{text, start, end}]`（时间戳秒，来自 VAD）
+  - **use_itn=True 必须开启**（自带标点）；**不要接 ct-punc**（双重标点实测问题）
+- 函数 `segment_to_paras(segments, max_chars=200) -> list[dict]`：把 ASR 分段合并/切分为「阅读友好的段落」（每段 50-200 字，按句号/时间间隔切；合并时**段落 start 取首段 start，end 取末段 end**）
+- **m4a 解码**：音频可能是 m4a（✅ 实测小宇宙直链是 m4a）——用 imageio-ffmpeg 转 wav 16k 单声道（funasr 标准输入），解码失败记 log 并置 failed
+- **长音频处理**：VAD 一次处理整段可能内存不足 → 按 10 分钟切片，逐片 VAD+转写，再拼接（切片边界注意：VAD 跨切片处可能切句，可接受，后续段落化会合并）
+- 错误处理：单段转写失败不中断整集（记 log 跳过），整集失败置 failed
 
 ### 文件 2：`backend/app/services/transcribe_service.py`（转写任务）
 
 - 函数 `start_transcribe(eid: str)`：更新 status=processing → 下载音频（若缺）→ 转写 → 分段入库 → status=done；失败置 failed 并记录错误
 - 函数 `get_transcript(eid: str) -> list[dict]`：读 transcript_paras
-- **异步执行**：转写耗时（4h 音频约 40-80 分钟），用 FastAPI BackgroundTasks 或线程池，**不阻塞请求**；进度可查询（处理中置 status，前端轮询）
+- **异步执行**：转写耗时（4h 音频，SenseVoiceSmall CPU 下估计 30-60 分钟，Intel Mac 更慢——**验收时用短音频片段**），用 FastAPI BackgroundTasks 或线程池，**不阻塞请求**；进度可查询（处理中置 status，前端轮询；可加「已处理 X 分钟音频」进度字段）
 
 ### 测试要求
 
-- mock 一段 10 秒音频，转写返回分段且时间戳递增（若本地无模型，用 `@pytest.mark.skipif` 跳过，仅测 segment_to_paras 的纯逻辑）
+- mock 一段 10 秒音频，转写返回分段且时间戳递增（若本地无模型，用 `@pytest.mark.skipif` 跳过，仅测 segment_to_paras 的纯逻辑——**重点测：合并后的段落 start/end 取首末段，保证时间戳单调递增**）
+- **真实验证（关键）**：用 5-10 分钟真实播客片段跑通，人工核对：① 转写文字可读、带标点（无双重标点）② 时间戳与音频对齐（播放到某段高亮位置正确）③ m4a 解码正常
+- **验证 Intel Mac 性能**：记录转写耗时（分钟音频/秒耗时），评估 4h 完整集可行性
 
 ### M2 验收清单
 
-- [ ] 真实音频转写成功，分段合理（每段可读）
+- [ ] 真实音频转写成功（SenseVoiceSmall + use_itn），分段合理（每段可读、**无双重标点**）
+- [ ] **每段带时间戳，且时间戳与音频对齐**（播放同步测试通过）
+- [ ] m4a 解码正常（imageio-ffmpeg 链路）
 - [ ] 转写状态流转正确（pending→processing→done/failed）
 - [ ] 长音频异步不阻塞（请求立即返回，状态可查）
+- [ ] 运行时内存口径 < 600MB（SenseVoiceSmall int8 约 240MB + VAD 约 290MB + 余量）
 
 ---
 

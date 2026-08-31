@@ -84,6 +84,15 @@ DDL = [
       text TEXT, start_ts REAL, end_ts REAL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS annotations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      book_id INTEGER, book_para_id INTEGER,
+      offset_start INTEGER, offset_end INTEGER,
+      color TEXT DEFAULT 'blue', note_text TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+    """,
 ]
 
 # episodes 表业务字段（upsert 更新范围）
@@ -157,6 +166,15 @@ async def get_episode(eid: str) -> dict[str, Any] | None:
     async with aiosqlite.connect(db_path()) as db:
         db.row_factory = aiosqlite.Row
         row = await db.execute("SELECT * FROM episodes WHERE eid = ?", (eid,))
+        found = await row.fetchone()
+        return dict(found) if found else None
+
+
+async def get_episode_by_id(episode_id: int) -> dict[str, Any] | None:
+    """按 episodes.id 查询（书 → episode 的关联）。"""
+    async with aiosqlite.connect(db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        row = await db.execute("SELECT * FROM episodes WHERE id = ?", (episode_id,))
         found = await row.fetchone()
         return dict(found) if found else None
 
@@ -426,3 +444,119 @@ async def get_book_paras(book_id: int) -> list[dict]:
             "ORDER BY bc.seq, bp.seq", (book_id,),
         )
         return [dict(r) for r in await cur.fetchall()]
+
+
+# ---------- annotations ----------
+
+async def insert_annotation(book_id: int, book_para_id: int,
+                            offset_start: int, offset_end: int,
+                            color: str = "blue",
+                            note_text: str | None = None) -> int:
+    """创建标注。range 越界则抛 ValueError（由调用方捕获转 400）。"""
+    if offset_start < 0 or offset_end <= offset_start:
+        raise ValueError(
+            f"非法文本偏移：offset_start={offset_start} offset_end={offset_end}"
+        )
+    async with aiosqlite.connect(db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        # 锚定范围越界校验：段落必须属于该书
+        row = await db.execute(
+            "SELECT id, book_id, text FROM book_paras WHERE id = ?",
+            (book_para_id,),
+        )
+        para = await row.fetchone()
+        if para is None:
+            raise ValueError(f"book_para_id={book_para_id} 不存在")
+        if int(para["book_id"]) != book_id:
+            raise ValueError(
+                f"段落 {book_para_id} 不属于该书 {book_id}"
+            )
+        txt_len = len((para["text"] or ""))
+        if offset_end > txt_len:
+            raise ValueError(
+                f"偏移越界：offset_end={offset_end} 段落长度={txt_len}"
+            )
+        cur = await db.execute(
+            "INSERT INTO annotations "
+            "(book_id, book_para_id, offset_start, offset_end, color, note_text) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (book_id, book_para_id, offset_start, offset_end,
+             color, note_text or None),
+        )
+        await db.commit()
+        return int(cur.lastrowid)
+
+
+async def delete_annotation(ann_id: int) -> bool:
+    """删除标注，返回是否存在。"""
+    async with aiosqlite.connect(db_path()) as db:
+        cur = await db.execute("DELETE FROM annotations WHERE id = ?", (ann_id,))
+        await db.commit()
+        return cur.rowcount > 0
+
+
+async def list_annotations_by_book(book_id: int) -> list[dict]:
+    async with aiosqlite.connect(db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT a.id, a.book_id, a.book_para_id, "
+            "  a.offset_start, a.offset_end, a.color, a.note_text, a.created_at, "
+            "  bp.text AS para_text, bc.seq AS chapter_seq "
+            "FROM annotations a "
+            "LEFT JOIN book_paras bp ON bp.id = a.book_para_id "
+            "LEFT JOIN book_chapters bc ON bc.id = bp.chapter_id "
+            "WHERE a.book_id = ? ORDER BY a.created_at DESC, a.id DESC",
+            (book_id,),
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+
+async def list_all_annotations() -> list[dict]:
+    """全部标注（含书标题、封面），供 /annotations 页按书聚合。"""
+    async with aiosqlite.connect(db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT a.id, a.book_id, a.book_para_id, "
+            "  a.offset_start, a.offset_end, a.color, a.note_text, a.created_at, "
+            "  bp.text AS para_text, bc.seq AS chapter_seq, "
+            "  b.title AS book_title, b.cover_url "
+            "FROM annotations a "
+            "LEFT JOIN book_paras bp ON bp.id = a.book_para_id "
+            "LEFT JOIN book_chapters bc ON bc.id = bp.chapter_id "
+            "LEFT JOIN books b ON b.id = a.book_id "
+            "ORDER BY a.created_at DESC, a.id DESC"
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+
+def _escape_like(q: str) -> str:
+    r"""LIKE 通配符转义：\ % _ 分别转 \\% \\_，保证字面匹配。"""
+    return (q.replace("\\", "\\\\")
+              .replace("%", "\\%")
+              .replace("_", "\\_"))
+
+
+async def search_book_paras(q: str, top_k: int = 10) -> list[dict]:
+    """M5 搜索占位：SQLite LIKE（关键词），M6 再上语义。"""
+    q = (q or "").strip()
+    if not q:
+        return []
+    top_k = max(1, min(top_k, 50))
+    pattern = f"%{_escape_like(q)}%"
+    async with aiosqlite.connect(db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT bp.id AS para_id, bp.book_id, bp.chapter_id, "
+            "  bp.seq AS para_seq, bp.text AS para_text, bp.start_ts, bp.end_ts, "
+            "  bc.title AS chapter_title, bc.seq AS chapter_seq, "
+            "  b.title AS book_title, b.cover_url "
+            "FROM book_paras bp "
+            "JOIN books b ON b.id = bp.book_id "
+            "JOIN book_chapters bc ON bc.id = bp.chapter_id "
+            "WHERE bp.text LIKE ? ESCAPE '\\' "
+            "ORDER BY b.created_at DESC, bp.id LIMIT ?",
+            (pattern, top_k),
+        )
+        rows = [dict(r) for r in await cur.fetchall()]
+    return rows
+
