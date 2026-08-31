@@ -8,21 +8,24 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.episodes import router as episodes_router
+from app.api.process import router as process_router
 from app.infra import db
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """启动时建表/迁移（幂等），关闭时释放转写线程池。"""
+    """启动时建表/迁移（幂等），关闭时释放转写+加工线程池。"""
     await db.init_db()
     yield
-    from app.services import transcribe_service
+    from app.services import process_service, transcribe_service
 
     transcribe_service._executor.shutdown(wait=False)
+    process_service._executor.shutdown(wait=False)
 
 
 app = FastAPI(title="PodLore", version="0.1.0", description="把播客变成你的书", lifespan=lifespan)
 app.include_router(episodes_router)
+app.include_router(process_router)
 
 
 @app.get("/health")

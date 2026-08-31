@@ -30,6 +30,9 @@ DDL = [
       series_name TEXT,
       transcript_status TEXT DEFAULT 'pending',
       transcript_progress REAL DEFAULT 0,
+      process_status TEXT DEFAULT 'pending',  -- pending/processing/done/failed
+      process_progress REAL DEFAULT 0,
+      book_summary TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     )
     """,
@@ -39,9 +42,30 @@ DDL = [
       episode_id INTEGER, seq INTEGER, text TEXT, start_ts REAL, end_ts REAL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS episode_quotes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      episode_id INTEGER, text TEXT, start_ts REAL, end_ts REAL, reason TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS episode_outline (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      episode_id INTEGER, seq INTEGER, title TEXT, start_ts REAL, end_ts REAL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS episode_para_flags (
+      episode_id INTEGER,
+      seq INTEGER,            -- 与 transcript_paras.seq 对齐
+      is_ad INTEGER DEFAULT 0,
+      ad_reason TEXT,
+      PRIMARY KEY (episode_id, seq)
+    )
+    """,
 ]
 
-# episodes 表业务字段（upsert 更新范围；created_at/transcript_status 不被覆盖）
+# episodes 表业务字段（upsert 更新范围）
 _EPISODE_FIELDS = (
     "pid", "eid", "title", "description", "duration", "pub_date",
     "audio_url", "audio_path", "cover_url", "shownotes_html",
@@ -56,17 +80,21 @@ def db_path() -> Path:
 
 
 async def init_db() -> None:
-    """执行建表 DDL（幂等）；对旧库补齐 M2 新增列（迁移）。"""
+    """执行建表 DDL（幂等）；对旧库补齐 M2/M3 新增列与新表（迁移）。"""
     async with aiosqlite.connect(db_path()) as db:
         for ddl in DDL:
             await db.execute(ddl)
-        # 旧库迁移：episodes 增加转写进度列（已存在则忽略）
-        try:
-            await db.execute(
-                "ALTER TABLE episodes ADD COLUMN transcript_progress REAL DEFAULT 0"
-            )
-        except aiosqlite.OperationalError:
-            pass  # 列已存在
+        # M2 / M3 新增列迁移（列已存在则忽略）
+        for col in [
+            ("episodes", "transcript_progress REAL DEFAULT 0"),
+            ("episodes", "process_status TEXT DEFAULT 'pending'"),
+            ("episodes", "process_progress REAL DEFAULT 0"),
+            ("episodes", "book_summary TEXT"),
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE {col[0]} ADD COLUMN {col[1]}")
+            except aiosqlite.OperationalError:
+                pass
         await db.commit()
 
 
@@ -167,12 +195,113 @@ async def replace_transcript_paras(episode_id: int, paras: list[dict]) -> None:
 
 
 async def get_transcript_paras(episode_id: int) -> list[dict]:
-    """按 seq 顺序读取转写段落。"""
+    """按 seq 顺序读取转写段落（左联 para_flags，附带 is_ad / ad_reason）。"""
     async with aiosqlite.connect(db_path()) as db:
         db.row_factory = aiosqlite.Row
-        row = await db.execute(
-            "SELECT seq, text, start_ts, end_ts FROM transcript_paras "
-            "WHERE episode_id = ? ORDER BY seq",
+        cur = await db.execute(
+            "SELECT p.seq, p.text, p.start_ts, p.end_ts, "
+            "  COALESCE(f.is_ad, 0) AS is_ad, f.ad_reason "
+            "FROM transcript_paras p "
+            "LEFT JOIN episode_para_flags f "
+            "  ON f.episode_id = p.episode_id AND f.seq = p.seq "
+            "WHERE p.episode_id = ? ORDER BY p.seq",
             (episode_id,),
         )
-        return [dict(r) for r in await row.fetchall()]
+        return [dict(r) for r in await cur.fetchall()]
+
+
+async def update_process_status(eid: str, status: str, progress: float | None = None) -> None:
+    """更新 AI 加工状态：pending / processing / done / failed；可同时写进度。"""
+    async with aiosqlite.connect(db_path()) as db:
+        if progress is None:
+            await db.execute(
+                "UPDATE episodes SET process_status = ? WHERE eid = ?", (status, eid)
+            )
+        else:
+            await db.execute(
+                "UPDATE episodes SET process_status = ?, process_progress = ? WHERE eid = ?",
+                (status, round(min(progress, 1.0), 4), eid),
+            )
+        await db.commit()
+
+
+async def update_book_summary(episode_id: int, summary: str) -> None:
+    """更新书摘要（300 字内）。"""
+    async with aiosqlite.connect(db_path()) as db:
+        await db.execute(
+            "UPDATE episodes SET book_summary = ? WHERE id = ?", (summary, episode_id)
+        )
+        await db.commit()
+
+
+async def replace_quotes(episode_id: int, quotes: list[dict]) -> None:
+    """写入金句（幂等：先清后插）。"""
+    async with aiosqlite.connect(db_path()) as db:
+        await db.execute("DELETE FROM episode_quotes WHERE episode_id = ?", (episode_id,))
+        rows = [(episode_id, q["text"], q["start_ts"], q["end_ts"], q.get("reason", ""))
+                for q in quotes]
+        await db.executemany(
+            "INSERT INTO episode_quotes (episode_id, text, start_ts, end_ts, reason) "
+            "VALUES (?, ?, ?, ?, ?)", rows,
+        )
+        await db.commit()
+
+
+async def get_quotes(episode_id: int) -> list[dict]:
+    """按 seq（实际按 start_ts）顺序读取金句。"""
+    async with aiosqlite.connect(db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT text, start_ts, end_ts, reason FROM episode_quotes "
+            "WHERE episode_id = ? ORDER BY start_ts", (episode_id,),
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+
+async def replace_outline(episode_id: int, outline: list[dict]) -> None:
+    """写入大纲章节（幂等：先清后插，seq 从 1 起递增）。"""
+    async with aiosqlite.connect(db_path()) as db:
+        await db.execute("DELETE FROM episode_outline WHERE episode_id = ?", (episode_id,))
+        rows = [(episode_id, i, ch["title"], ch["start_ts"], ch["end_ts"])
+                for i, ch in enumerate(outline, start=1)]
+        await db.executemany(
+            "INSERT INTO episode_outline (episode_id, seq, title, start_ts, end_ts) "
+            "VALUES (?, ?, ?, ?, ?)", rows,
+        )
+        await db.commit()
+
+
+async def get_outline(episode_id: int) -> list[dict]:
+    """按 seq 顺序读取大纲。"""
+    async with aiosqlite.connect(db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT seq, title, start_ts, end_ts FROM episode_outline "
+            "WHERE episode_id = ? ORDER BY seq", (episode_id,),
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+
+async def replace_ad_flags(episode_id: int, flags: list[dict]) -> None:
+    """写入段落级广告标记（幂等：先清后插；只保留 is_ad=1 的行，减少存盘）。"""
+    async with aiosqlite.connect(db_path()) as db:
+        await db.execute("DELETE FROM episode_para_flags WHERE episode_id = ?", (episode_id,))
+        rows = [(episode_id, f["seq"], 1, f.get("reason", ""))
+                for f in flags if f.get("is_ad")]
+        if rows:
+            await db.executemany(
+                "INSERT INTO episode_para_flags (episode_id, seq, is_ad, ad_reason) "
+                "VALUES (?, ?, ?, ?)", rows,
+            )
+        await db.commit()
+
+
+async def get_ad_flags(episode_id: int) -> list[dict]:
+    """返回 is_ad=1 的段落级广告标记。"""
+    async with aiosqlite.connect(db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT seq, is_ad, ad_reason AS reason FROM episode_para_flags "
+            "WHERE episode_id = ? ORDER BY seq", (episode_id,),
+        )
+        return [dict(r) for r in await cur.fetchall()]
