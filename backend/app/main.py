@@ -1,11 +1,28 @@
 """PodLore 后端入口。
 
-M0：最小可运行骨架；M5 起挂业务路由。
+M0：最小可运行骨架；M2 起挂转写路由，后续里程碑逐步扩充。
 """
+
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-app = FastAPI(title="PodLore", version="0.1.0", description="把播客变成你的书")
+from app.api.episodes import router as episodes_router
+from app.infra import db
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """启动时建表/迁移（幂等），关闭时释放转写线程池。"""
+    await db.init_db()
+    yield
+    from app.services import transcribe_service
+
+    transcribe_service._executor.shutdown(wait=False)
+
+
+app = FastAPI(title="PodLore", version="0.1.0", description="把播客变成你的书", lifespan=lifespan)
+app.include_router(episodes_router)
 
 
 @app.get("/health")

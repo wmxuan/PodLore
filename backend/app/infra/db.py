@@ -29,6 +29,7 @@ DDL = [
       play_count INTEGER, clap_count INTEGER, favorite_count INTEGER, comment_count INTEGER,
       series_name TEXT,
       transcript_status TEXT DEFAULT 'pending',
+      transcript_progress REAL DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now'))
     )
     """,
@@ -55,10 +56,17 @@ def db_path() -> Path:
 
 
 async def init_db() -> None:
-    """执行建表 DDL（幂等）。"""
+    """执行建表 DDL（幂等）；对旧库补齐 M2 新增列（迁移）。"""
     async with aiosqlite.connect(db_path()) as db:
         for ddl in DDL:
             await db.execute(ddl)
+        # 旧库迁移：episodes 增加转写进度列（已存在则忽略）
+        try:
+            await db.execute(
+                "ALTER TABLE episodes ADD COLUMN transcript_progress REAL DEFAULT 0"
+            )
+        except aiosqlite.OperationalError:
+            pass  # 列已存在
         await db.commit()
 
 
@@ -119,3 +127,52 @@ async def update_transcript_status(eid: str, status: str) -> None:
             "UPDATE episodes SET transcript_status = ? WHERE eid = ?", (status, eid)
         )
         await db.commit()
+
+
+async def update_transcript_progress(eid: str, progress: float) -> None:
+    """更新转写进度（0-1，按已处理音频时长/总时长）。"""
+    async with aiosqlite.connect(db_path()) as db:
+        await db.execute(
+            "UPDATE episodes SET transcript_progress = ? WHERE eid = ?",
+            (round(min(progress, 1.0), 4), eid),
+        )
+        await db.commit()
+
+
+async def update_audio_path(eid: str, audio_path: str) -> None:
+    """记录下载后的音频本地路径。"""
+    async with aiosqlite.connect(db_path()) as db:
+        await db.execute(
+            "UPDATE episodes SET audio_path = ? WHERE eid = ?", (audio_path, eid)
+        )
+        await db.commit()
+
+
+async def replace_transcript_paras(episode_id: int, paras: list[dict]) -> None:
+    """写入转写段落（先清旧再插，重转写幂等），seq 从 1 递增。"""
+    async with aiosqlite.connect(db_path()) as db:
+        await db.execute(
+            "DELETE FROM transcript_paras WHERE episode_id = ?", (episode_id,)
+        )
+        rows = [
+            (episode_id, i, p["text"], p["start"], p["end"])
+            for i, p in enumerate(paras, start=1)
+        ]
+        await db.executemany(
+            "INSERT INTO transcript_paras (episode_id, seq, text, start_ts, end_ts) "
+            "VALUES (?, ?, ?, ?, ?)",
+            rows,
+        )
+        await db.commit()
+
+
+async def get_transcript_paras(episode_id: int) -> list[dict]:
+    """按 seq 顺序读取转写段落。"""
+    async with aiosqlite.connect(db_path()) as db:
+        db.row_factory = aiosqlite.Row
+        row = await db.execute(
+            "SELECT seq, text, start_ts, end_ts FROM transcript_paras "
+            "WHERE episode_id = ? ORDER BY seq",
+            (episode_id,),
+        )
+        return [dict(r) for r in await row.fetchall()]
