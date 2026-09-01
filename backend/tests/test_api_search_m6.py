@@ -128,17 +128,26 @@ def _install_fake_embedding():
 
 
 def _install_fake_embedding_unavailable():
-    """monkey-patch embedding 为『不可用』状态（ready=False）。"""
+    """monkey-patch embedding 为『不可用』状态（ready=False）。
+    彻底封死 _try_import_and_load，避免 admin_search_rebuild 触发真实加载
+    把 _state 改回 ready=True（这曾在降级 transformers 后导致测试失效）。
+    """
     from app.infra import embedding
     embedding._state.ready = False
     embedding._state.error = "pytest fake: embedder disabled (simulate import error)"
     embedding._state.dim = 512
     embedding._model = None
+    # 封死加载入口：让任何 init_embedder 调用都返回不可用
+    def _no_load():
+        return embedding._state
+    embedding._try_import_and_load = _no_load
+    embedding.init_embedder = _no_load
     def _boom(texts):
         raise RuntimeError(embedding._state.error)
     embedding.embed = _boom
     from app.infra import vector_store as vs
     vs.embed = _boom
+    vs.init_embedder = _no_load
     vs._index = None
 
 
