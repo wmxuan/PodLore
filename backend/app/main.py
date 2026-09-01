@@ -12,6 +12,7 @@ from app.api.episodes import router as episodes_router
 from app.api.process import router as process_router
 from app.api.reader_api import router as reader_router
 from app.api.search_api import search_router  # M6：/api/search & /admin/search/rebuild & /search/state
+from app.api.home_api import home_router  # M7：首页四模块 /api/home
 from app.infra import db
 
 
@@ -39,6 +40,7 @@ app.include_router(process_router)
 app.include_router(editor_router)
 app.include_router(search_router)   # M6 先于 reader_router，/api/search 被 search_router 先注册（避免同名冲突）
 app.include_router(reader_router)
+app.include_router(home_router)    # M7：/api/home 首页四模块
 
 
 @app.get("/health")

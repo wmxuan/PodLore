@@ -112,6 +112,49 @@ export type SearchHit = {
   chapter_seq: number
   book_title: string
   cover_url: string | null
+  score?: number
+  engine_hit?: 'vector' | 'fts' | 'like' | string
+  context_before?: string
+  context_after?: string
+}
+
+// M6 升级：/api/search 返回 hybrid 结构
+export type SearchResponse = {
+  q: string
+  engine: string
+  embedding_ready: boolean
+  embedding_error: string | null
+  total: number
+  results: SearchHit[]
+  // M5 向后兼容字段
+  hits: number
+  rows: SearchHit[]
+  query: string
+}
+
+// ---------- 首页（M7） ----------
+
+export type WordCloudItem = { word: string; weight: number }
+export type FootprintItem = { date: string; count: number }
+export type BookRecent = {
+  id: number
+  title: string
+  cover_url: string | null
+  chapters: number
+  paras: number
+  created_at: string
+}
+export type HomeStats = {
+  books: number
+  annotations: number
+  notes: number
+  episodes: number
+}
+export type HomeData = {
+  word_cloud: WordCloudItem[]
+  footprint: FootprintItem[]
+  books_recent: BookRecent[]
+  stats: HomeStats
 }
 
 // ---------- 编辑器（M4） ----------
@@ -160,9 +203,20 @@ export function listAnnotations(bookId?: number) {
 
 export function searchBookParas(q: string, top_k = 10) {
   const params = new URLSearchParams({ q, top_k: String(top_k) })
-  return request<{ engine: string; query: string; hits: number; rows: SearchHit[] }>(
-    `/api/search?${params.toString()}`,
-  )
+  return request<SearchResponse>(`/api/search?${params.toString()}`)
+}
+
+// M6 升级：可指定 engine（hybrid/vector/fts/like）& 是否附上下文
+export function searchParas(q: string, opts: { top_k?: number; engine?: 'hybrid' | 'vector' | 'fts' | 'like'; include_context?: boolean } = {}) {
+  const top_k = opts.top_k ?? 10
+  const engine = opts.engine ?? 'hybrid'
+  const include_context = opts.include_context === false ? '0' : '1'
+  const params = new URLSearchParams({ q, top_k: String(top_k), engine, include_context })
+  return request<SearchResponse>(`/api/search?${params.toString()}`)
+}
+
+export function getHome() {
+  return request<HomeData>('/api/home')
 }
 
 export function fmtTs(s: number) {
