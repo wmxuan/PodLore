@@ -295,6 +295,7 @@ def main() -> int:
     print(report_txt)
 
     if args.report_json:
+        Path(args.report_json).parent.mkdir(parents=True, exist_ok=True)
         with open(args.report_json, "w", encoding="utf-8") as f:
             json.dump({
                 "dataset": str(args.dataset),

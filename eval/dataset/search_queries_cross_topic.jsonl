@@ -1,0 +1,15 @@
+{"query": "雷军 小米 创业 经历", "expected_book_ids": ["<商业类 book_id>"], "expected_keywords": ["雷军", "小米", "创业"], "type": "cross_topic_business", "note": "应只命中商业类书（雷军/小米创业类），不命中护发类书"}
+{"query": "马斯克 特斯拉 SpaceX", "expected_book_ids": ["<商业类 book_id>"], "expected_keywords": ["马斯克", "特斯拉", "SpaceX"], "type": "cross_topic_business"}
+{"query": "营销 4P 4C 漏斗 转化", "expected_book_ids": ["<营销类 book_id>"], "expected_keywords": ["营销", "漏斗", "转化"], "type": "cross_topic_marketing"}
+{"query": "KOL 私域 流量 投放", "expected_book_ids": ["<营销类 book_id>"], "expected_keywords": ["KOL", "私域", "流量", "投放"], "type": "cross_topic_marketing"}
+{"query": "护肤 成分 烟酰胺 视黄醇", "expected_book_ids": ["<美妆类 book_id>"], "expected_keywords": ["护肤", "烟酰胺", "视黄醇"], "type": "cross_topic_beauty"}
+{"query": "彩妆 口红 眼影 粉底", "expected_book_ids": ["<美妆类 book_id>"], "expected_keywords": ["彩妆", "口红", "眼影", "粉底"], "type": "cross_topic_beauty"}
+{"query": "洗护 护发 卡诗", "expected_book_ids": ["<护发类 book_id>"], "expected_keywords": ["洗护", "护发", "卡诗"], "type": "cross_topic_haircare"}
+{"query": "欧莱雅 联合利华 沙龙 渠道", "expected_book_ids": ["<护发类 book_id>"], "expected_keywords": ["欧莱雅", "联合利华", "沙龙", "渠道"], "type": "cross_topic_haircare"}
+{"query": "创业 团队 融资 估值", "expected_book_ids": ["<商业类 book_id>"], "expected_keywords": ["创业", "团队", "融资", "估值"], "type": "cross_topic_business"}
+{"query": "品牌 心智 品类 占位", "expected_book_ids": ["<商业类 book_id>"], "expected_keywords": ["品牌", "心智", "品类", "占位"], "type": "cross_topic_brand_strategy"}
+{"query": "供应链 物流 仓配 库存", "expected_book_ids": ["<商业/电商类 book_id>"], "expected_keywords": ["供应链", "物流", "仓配"], "type": "cross_topic_supply_chain"}
+{"query": "增长 留存 复购 LTV", "expected_book_ids": ["<运营/商业类 book_id>"], "expected_keywords": ["增长", "留存", "复购", "LTV"], "type": "cross_topic_growth"}
+{"query": "AI 大模型 应用 创业", "expected_book_ids": ["<AI类 book_id>"], "expected_keywords": ["AI", "大模型", "应用"], "type": "cross_topic_ai"}
+{"query": "出海 跨境 海外 市场", "expected_book_ids": ["<出海类 book_id>"], "expected_keywords": ["出海", "跨境", "海外", "市场"], "type": "cross_topic_global"}
+{"query": "组织 文化 OKR 管理", "expected_book_ids": ["<管理类 book_id>"], "expected_keywords": ["组织", "文化", "OKR", "管理"], "type": "cross_topic_management"}

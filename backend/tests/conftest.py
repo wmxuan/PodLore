@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import random
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -15,6 +16,13 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 # 测试库统一走临时路径，避免污染 data/podlore.db
 os.environ.setdefault("PODLORE_DB", "data/test_podlore.db")
+
+# 让 backend/scripts/* 可作为命名空间包导入（如 eval_search 测试）：
+# pytest 默认只把 conftest 所在目录（backend/tests）加入 sys.path，repo root 不在，
+# 导致 `from backend.scripts import eval_search` 报 ModuleNotFoundError。这里补上。
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 
 def run(coro):

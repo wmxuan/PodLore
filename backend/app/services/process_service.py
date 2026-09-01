@@ -20,8 +20,17 @@ from pydantic import BaseModel, Field
 from app.infra import db
 from app.infra.llm import chat, LLMConfigError
 
-# 与转写复用同一个执行池（保持串行、稳定 CPU 占用）
-_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="process")
+# 与转写复用同一个执行池（保持串行、稳定 CPU 占用）。
+# 惰性创建/重建：lifespan shutdown 关闭后能自愈（见 transcribe_service._get_executor
+# 同款处理），避免 "cannot schedule new futures after shutdown"，修复测试隔离。
+_executor: ThreadPoolExecutor | None = None
+
+
+def _get_executor() -> ThreadPoolExecutor:
+    global _executor
+    if _executor is None or _executor._shutdown:
+        _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="process")
+    return _executor
 
 # 分块策略：每批按段落数/字数切，上限 4000 字（deepseek-chat 上下文 64k，留余量）
 _CHUNK_MAX_CHARS = 4000
@@ -330,7 +339,7 @@ _STEP_WEIGHTS = (
 
 def start_process(eid: str) -> Future:
     """提交后台加工任务，立即返回 Future。"""
-    return _executor.submit(_worker, eid)
+    return _get_executor().submit(_worker, eid)
 
 
 def _worker(eid: str) -> None:

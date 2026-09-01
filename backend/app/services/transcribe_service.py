@@ -17,8 +17,19 @@ from loguru import logger
 from app.infra import asr, db, downloader
 from app.infra.config import audio_dir
 
-# 转写任务串行：CPU 已满载，多集并行只会更慢
-_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="transcribe")
+# 转写任务串行：CPU 已满载，多集并行只会更慢。
+# 惰性创建/重建：lifespan shutdown 会关闭本池（见 app/main.py），关闭后若再有
+# submit（如 API 测试触发 lifespan 后又跑 worker 测试）会抛
+# "cannot schedule new futures after shutdown"。_get_executor 检测 _shutdown 后自愈，
+# 兼顾生产重启与测试隔离（不再需要按 "85+15 单独" 拆分跑 pytest）。
+_executor: ThreadPoolExecutor | None = None
+
+
+def _get_executor() -> ThreadPoolExecutor:
+    global _executor
+    if _executor is None or _executor._shutdown:
+        _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="transcribe")
+    return _executor
 
 
 def _db(coro) -> Any:
@@ -33,7 +44,7 @@ async def get_episode_or_none(eid: str) -> dict | None:
 
 def start_transcribe(eid: str) -> Future:
     """提交后台转写任务，立即返回 Future（不阻塞调用方）。"""
-    return _executor.submit(_worker, eid)
+    return _get_executor().submit(_worker, eid)
 
 
 def _worker(eid: str) -> None:

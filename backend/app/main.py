@@ -30,8 +30,10 @@ async def lifespan(app: FastAPI):
     yield
     from app.services import process_service, transcribe_service
 
-    transcribe_service._executor.shutdown(wait=False)
-    process_service._executor.shutdown(wait=False)
+    # 非阻塞关闭后台执行池（_executor 为惰性创建，可能仍为 None）。
+    for svc in (transcribe_service, process_service):
+        if svc._executor is not None and not svc._executor._shutdown:
+            svc._executor.shutdown(wait=False)
 
 
 app = FastAPI(title="PodLore", version="0.1.0", description="把播客变成你的书", lifespan=lifespan)
